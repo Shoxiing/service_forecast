@@ -1,0 +1,83 @@
+version: '3.11'
+
+services:
+  db_auth:
+    container_name: db_auth_1
+    image: postgres:14.3-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  db_airflow:
+    container_name: db_airflow_1
+    image: postgres:14.3-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD_airflow}
+      - POSTGRES_USER=${POSTGRES_USER_airflow}
+      - POSTGRES_DB=${POSTGRES_DB_airflow}
+    volumes:
+      - db_airflow_data:/var/lib/postgresql/data_airflow
+
+  telegram_bot:
+    container_name: telegram_bot
+    build: 
+      context: ./tg_bot_crypto
+    environment:
+      - TELEGRAM_BOT_API_KEY=${TELEGRAM_BOT_API_KEY}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+    depends_on:
+      - db_auth
+    volumes:
+      - ./tg_bot_crypto:/app
+
+  airflow:
+    container_name: airflow
+    build:
+      context: ./airflow_dags
+    environment:
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${POSTGRES_USER_airflow}:${POSTGRES_PASSWORD_airflow}@db_airflow:5432/${POSTGRES_DB_airflow}
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - DATABASE_URL = ${DATABASE_URL}
+      - DB_PROTOCOL=${DB_PROTOCOL}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db_airflow
+    volumes:
+      - ./airflow_dags/dags:/opt/airflow/dags
+    command: >
+      /bin/bash -c "
+      airflow db init &&
+      airflow users create -u airflow -f Airflow -l Apache -r Admin -e airflow@example.com -p airflow &&
+      (airflow scheduler &) &&
+      airflow webserver"
+    deploy:
+          resources:
+            reservations:
+              devices:
+                - driver: nvidia
+                  count: 1
+                  capabilities: [gpu]
+ 
+
+ 
+volumes:
+  db_data:
+  db_airflow_data:
+
